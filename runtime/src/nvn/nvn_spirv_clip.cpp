@@ -119,7 +119,7 @@ bool patch_clip_z(const std::vector<uint32_t>& in, std::vector<uint32_t>& out) {
 bool depth_remap() {
     static const bool on = [] {
         const char* e = std::getenv("NX_CLIP_Z_PATCH");
-        return e && e[0] == '1';
+        return e ? e[0] == '1' : !vk_depth_clip_control();
     }();
     return on;
 }

@@ -525,8 +525,67 @@ uint32_t unwritten_inputs(const ShaderInfo* vs, const ShaderInfo* fs) {
     return mask;
 }
 
+bool sanitize_module(const std::vector<uint32_t>& in, std::vector<uint32_t>& out) {
+    enum : uint32_t {
+        OpMemberName = 6, OpExtension = 10, OpCapability = 17, OpTypeStruct = 30, OpDecorate = 71, OpMemberDecorate = 72,
+        DecorationBuiltIn = 11, BuiltInPosition = 0,
+    };
+    if (in.size() < 5) return false;
+    std::vector<Inst> insts;
+    bool has_sg = false, has_interlock = false, has_dp = false, has_clip_cull_use = false;
+    uint32_t gl_pv = 0;
+    for (size_t i = 5; i < in.size();) {
+        uint32_t len = in[i] >> 16, op = in[i] & 0xffff;
+        if (!len || i + len > in.size()) return false;
+        insts.push_back({i, op, len});
+        const uint32_t* w = &in[i];
+        if (op >= 333 && op <= 366) has_sg = true;
+        else if (op == 5364 || op == 5365) has_interlock = true;
+        else if (op == OpDecorate && len >= 4 && w[2] == DecorationBuiltIn) {
+            uint32_t b = w[3];
+            if (b == 25 || (b >= 36 && b <= 41)) has_sg = true;
+            else if (b >= 4424 && b <= 4426) has_dp = true;
+            else if (b == 3 || b == 4) has_clip_cull_use = true;
+        } else if (op == OpMemberDecorate && len >= 5 && w[3] == DecorationBuiltIn) {
+            uint32_t b = w[4];
+            if (b == BuiltInPosition && w[2] == 0) gl_pv = w[1];
+        }
+        i += len;
+    }
+    bool changed = false;
+    out.assign(in.begin(), in.begin() + 5);
+    for (const Inst& n : insts) {
+        const uint32_t* w = &in[n.at];
+        if (n.op == OpCapability && n.len == 2) {
+            uint32_t cap = w[1];
+            if (!has_sg && cap >= 61 && cap <= 68) { changed = true; continue; }
+            if (!has_interlock && (cap == 5363 || cap == 5372 || cap == 5378)) { changed = true; continue; }
+            if (!has_dp && cap == 4427) { changed = true; continue; }
+            if (!has_clip_cull_use && (cap == 32 || cap == 33)) { changed = true; continue; }
+        } else if (n.op == OpExtension && !has_interlock && n.len >= 2) {
+            if (std::strcmp(reinterpret_cast<const char*>(w + 1), "SPV_EXT_fragment_shader_interlock") == 0) {
+                changed = true;
+                continue;
+            }
+        } else if (gl_pv && !has_clip_cull_use) {
+            if ((n.op == OpMemberName || n.op == OpMemberDecorate) && n.len >= 3 && w[1] == gl_pv && w[2] >= 2) {
+                changed = true;
+                continue;
+            }
+            if (n.op == OpTypeStruct && n.len == 6 && w[1] == gl_pv) {
+                out.insert(out.end(), {(4u << 16) | OpTypeStruct, w[1], w[2], w[3]});
+                changed = true;
+                continue;
+            }
+        }
+        out.insert(out.end(), w, w + n.len);
+    }
+    return changed;
+}
+
 std::vector<uint32_t> patched_spirv(const ShaderInfo* s, const uint8_t* kinds, uint32_t unwritten, bool* int_inputs) {
     std::vector<uint32_t> code = s->spirv, next;  // each pass reads `code` and leaves its result in `next`
+    if (sanitize_module(code, next)) code.swap(next);
     bool is_int = kinds && patch_int_inputs(code, kinds, next);
     if (is_int) code.swap(next);
     if (int_inputs) *int_inputs = is_int;

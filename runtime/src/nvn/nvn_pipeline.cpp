@@ -126,7 +126,8 @@ VkShaderModule module_of(const ShaderInfo* s, const uint8_t* kinds = nullptr, ui
         VkShaderModuleCreateInfo ci{VK_STRUCTURE_TYPE_SHADER_MODULE_CREATE_INFO};
         ci.codeSize = code.size() * 4;
         ci.pCode = code.data();
-        if (p_vkCreateShaderModule(vk_device(), &ci, nullptr, &m) != VK_SUCCESS) log("nvn/vk: shader %s rejected", s->hash.c_str());
+        if (VkResult r = p_vkCreateShaderModule(vk_device(), &ci, nullptr, &m); r != VK_SUCCESS)
+            log("nvn/vk: shader %s rejected (VkResult %d)", s->hash.c_str(), int(r));
         note_module_created(plat::monotonic_ns() - module_t0);
         static int logged = 0;
         if (is_patched && logged++ < 20) log("nvn/vk: shader %s: integer vertex inputs", s->hash.c_str());
@@ -363,7 +364,7 @@ VkPipeline compile(PipeBuild& b) {
     VkResult made = p_vkCreateGraphicsPipelines(vk_device(), b.cache, 1, &b.ci, nullptr, &p);
     note_pipeline_created(plat::monotonic_ns() - t0, t_worker);
     if (made != VK_SUCCESS) {
-        log("nvn/vk: pipeline for %s + %s failed", b.vs_hash.c_str(), b.fs_hash.c_str());
+        log("nvn/vk: pipeline for %s + %s failed (VkResult %d)", b.vs_hash.c_str(), b.fs_hash.c_str(), int(made));
         p = VK_NULL_HANDLE;
     } else if (g_trace) {
         log("nvn/vk: pipeline: %s + %s", b.vs_hash.c_str(), b.fs_hash.c_str());
@@ -818,7 +819,7 @@ std::unique_ptr<PipeBuild> prepare_graphics_pipeline(const PipelineKey& key, con
 
     VkPipelineRasterizationStateCreateInfo& rs = B.rs;
     rs = {VK_STRUCTURE_TYPE_PIPELINE_RASTERIZATION_STATE_CREATE_INFO};
-    rs.polygonMode = key.polygon.mode == 0 ? VK_POLYGON_MODE_POINT : key.polygon.mode == 1 ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
+    rs.polygonMode = !vk_features().fillModeNonSolid ? VK_POLYGON_MODE_FILL : key.polygon.mode == 0 ? VK_POLYGON_MODE_POINT : key.polygon.mode == 1 ? VK_POLYGON_MODE_LINE : VK_POLYGON_MODE_FILL;
     rs.cullMode = vk_cull(key.polygon.cull);
     // NVNfrontFace CW 0 / CCW 1, taken as is: the draws use a negative-height viewport (nvn_draw.cpp) that gives NVN's
     // upper-left-origin mapping, so windings match NVN's.

@@ -180,6 +180,8 @@ bool init() {
     // depth -1..1 (NVN's default depth mode, what Wonder uses), and on MoltenVK the portability subset's own
     // features, which must be enabled to be used.
     VkPhysicalDeviceFeatures2 features{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_FEATURES_2};
+    VkPhysicalDeviceVulkan11Features f11{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_1_FEATURES};
+    VkPhysicalDeviceVulkan12Features f12{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_2_FEATURES};
     VkPhysicalDeviceVulkan13Features f13{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_VULKAN_1_3_FEATURES};
     VkPhysicalDeviceIndexTypeUint8FeaturesEXT fu8{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_INDEX_TYPE_UINT8_FEATURES_EXT};
     VkPhysicalDeviceDepthClipControlFeaturesEXT fclip{VK_STRUCTURE_TYPE_PHYSICAL_DEVICE_DEPTH_CLIP_CONTROL_FEATURES_EXT};
@@ -188,7 +190,9 @@ bool init() {
         void* pNext = nullptr;
         VkBool32 fields[15] = {};
     } fport;
-    features.pNext = &f13;
+    features.pNext = &f11;
+    f11.pNext = &f12;
+    f12.pNext = &f13;
     void** tail = &f13.pNext;
     if (has_extension(dext, "VK_EXT_index_type_uint8")) {
         dexts.push_back("VK_EXT_index_type_uint8");
